@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#14161a">
+  <title>The Little Scout</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #14161a;
+      --card: #1f2329;
+      --button: #2c323a;
+      --accent: #3f7fd6;
+      --text: #eef1f5;
+      --muted: #a3acb8;
+      --good: #57c98a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    main {
+      display: grid;
+      gap: 16px;
+      max-width: 420px;
+      margin: 0 auto;
+      padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+    }
+    h1 { margin: 0; font-size: 1.25rem; }
+    p { margin: 0; }
+    .card { display: grid; gap: 12px; padding: 16px; border-radius: 14px; background: var(--card); }
+    .status { color: var(--muted); }
+    .status.good { color: var(--good); }
+    .button {
+      display: block;
+      min-height: 56px;
+      padding: 16px;
+      border: 0;
+      border-radius: 12px;
+      background: var(--button);
+      color: var(--text);
+      font: inherit;
+      font-weight: 600;
+      text-align: center;
+      text-decoration: none;
+    }
+    .button.primary { background: var(--accent); }
+    .hint { color: var(--muted); font-size: 0.875rem; }
+    .hint ul { margin: 0; padding-left: 1.2em; }
+    .links { display: flex; flex-wrap: wrap; gap: 8px; }
+    .links a { color: var(--muted); font-size: 0.875rem; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>The Little Scout</h1>
+
+    <section class="card">
+      <p id="status" class="status" role="status">Looking for the camera…</p>
+      <a id="open" class="button primary" hidden>Open the camera</a>
+      <button id="retry" class="button" type="button" hidden>Try again</button>
+    </section>
+
+    <section id="help" class="card hint" hidden>
+      <ul>
+        <li>Check that Tailscale is switched on.</li>
+        <li>If your browser asked about devices on your local network, allow it. That's how this page looks for the camera.</li>
+        <li>The camera may simply be off right now. This page keeps looking.</li>
+      </ul>
+      <div class="links" id="direct"></div>
+    </section>
+  </main>
+
+  <script>
+    // Every computer that can have the camera, in the order to prefer them. Each one's
+    // /ping.gif only loads if the camera is plugged into it and the guest is allowed in.
+    const MACHINES = [
+      'https://jack-pc.tail215c95.ts.net/',
+    ];
+    const PROBE_TIMEOUT_MS = 6000;
+    const RETRY_MS = 10000;
+
+    const statusEl = document.getElementById('status');
+    const openEl = document.getElementById('open');
+    const retryEl = document.getElementById('retry');
+    const helpEl = document.getElementById('help');
+    const directEl = document.getElementById('direct');
+    let retryTimer;
+    let searching = false;
+
+    // Resolves true if the image loads in time. A computer that is off never answers, so
+    // the timeout is what decides it.
+    function probe(base) {
+      return new Promise((resolve) => {
+        const image = new Image();
+        const timer = setTimeout(() => finish(false), PROBE_TIMEOUT_MS);
+        function finish(found) {
+          clearTimeout(timer);
+          image.onload = image.onerror = null;
+          image.src = '';
+          resolve(found);
+        }
+        image.onload = () => finish(true);
+        image.onerror = () => finish(false);
+        image.src = `${base}ping.gif?t=${Date.now()}`;
+      });
+    }
+
+    async function search() {
+      if (searching) return;
+      searching = true;
+      clearTimeout(retryTimer);
+      statusEl.textContent = 'Looking for the camera…';
+      statusEl.classList.remove('good');
+      retryEl.hidden = true;
+
+      const results = await Promise.all(MACHINES.map(probe));
+      const found = MACHINES[results.indexOf(true)];
+      searching = false;
+
+      if (found) {
+        statusEl.textContent = 'Found the camera.';
+        statusEl.classList.add('good');
+        openEl.href = found;
+        openEl.hidden = false;
+        helpEl.hidden = true;
+        return;
+      }
+
+      openEl.hidden = true;
+      statusEl.textContent = "Couldn't find the camera.";
+      retryEl.hidden = false;
+      helpEl.hidden = false;
+      if (!document.hidden) retryTimer = setTimeout(search, RETRY_MS);
+    }
+
+    // In case the check itself is blocked: links straight to each computer.
+    directEl.replaceChildren(
+      document.createTextNode('Or try directly: '),
+      ...MACHINES.map((url, index) => {
+        const link = document.createElement('a');
+        link.href = url;
+        link.textContent = `computer ${index + 1}`;
+        return link;
+      }),
+    );
+
+    retryEl.addEventListener('click', search);
+    // A phone can bring back a page left open for hours, so look again each time.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) search();
+    });
+    search();
+  </script>
+</body>
+</html>
