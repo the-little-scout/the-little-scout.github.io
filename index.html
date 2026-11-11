@@ -63,8 +63,8 @@
     <h1>The Little Scout</h1>
 
     <section class="card">
-      <p id="status" class="status" role="status">Looking for the camera…</p>
-      <a id="open" class="button primary" hidden>Open the camera</a>
+      <p id="status" class="status" role="status">Looking…</p>
+      <a id="open" class="button primary" hidden>Open</a>
       <button id="retry" class="button" type="button" hidden>Try again</button>
     </section>
 
@@ -72,15 +72,17 @@
       <ul>
         <li>Check that Tailscale is switched on.</li>
         <li>If your browser asked about devices on your local network, allow it. That's how this page looks for the camera.</li>
-        <li>The camera may simply be off right now. This page keeps looking.</li>
+        <li>The computer may simply be off right now. This page keeps looking.</li>
       </ul>
       <div class="links" id="direct"></div>
     </section>
   </main>
 
   <script>
-    // Every computer that can have the camera, in the order to prefer them. Each one's
-    // /ping.gif only loads if the camera is plugged into it and the guest is allowed in.
+    // Every computer that can have the camera, in the order to prefer them. On each one,
+    // /ping.gif only loads if the camera is plugged in, and /touch.gif if touches can be
+    // sent from it, camera or not; neither loads unless the guest is allowed in. A computer
+    // with the camera wins; failing that, one where she can still send touches.
     const MACHINES = [
       'https://jack-pc.tail215c95.ts.net/',
     ];
@@ -97,7 +99,7 @@
 
     // Resolves true if the image loads in time. A computer that is off never answers, so
     // the timeout is what decides it.
-    function probe(base) {
+    function probe(url) {
       return new Promise((resolve) => {
         const image = new Image();
         const timer = setTimeout(() => finish(false), PROBE_TIMEOUT_MS);
@@ -109,7 +111,7 @@
         }
         image.onload = () => finish(true);
         image.onerror = () => finish(false);
-        image.src = `${base}ping.gif?t=${Date.now()}`;
+        image.src = `${url}?t=${Date.now()}`;
       });
     }
 
@@ -117,16 +119,22 @@
       if (searching) return;
       searching = true;
       clearTimeout(retryTimer);
-      statusEl.textContent = 'Looking for the camera…';
+      statusEl.textContent = 'Looking…';
       statusEl.classList.remove('good');
       retryEl.hidden = true;
 
-      const results = await Promise.all(MACHINES.map(probe));
-      const found = MACHINES[results.indexOf(true)];
+      const [camera, touch] = await Promise.all([
+        Promise.all(MACHINES.map((base) => probe(`${base}ping.gif`))),
+        Promise.all(MACHINES.map((base) => probe(`${base}touch.gif`))),
+      ]);
+      const withCamera = MACHINES[camera.indexOf(true)];
+      const found = withCamera ?? MACHINES[touch.indexOf(true)];
       searching = false;
 
       if (found) {
-        statusEl.textContent = 'Found the camera.';
+        statusEl.textContent = withCamera
+          ? 'Found the camera.'
+          : 'The camera is off right now. You can still send touches.';
         statusEl.classList.add('good');
         openEl.href = found;
         openEl.hidden = false;
@@ -135,7 +143,7 @@
       }
 
       openEl.hidden = true;
-      statusEl.textContent = "Couldn't find the camera.";
+      statusEl.textContent = "Couldn't find it.";
       retryEl.hidden = false;
       helpEl.hidden = false;
       if (!document.hidden) retryTimer = setTimeout(search, RETRY_MS);
